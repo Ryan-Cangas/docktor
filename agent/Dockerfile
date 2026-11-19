@@ -1,0 +1,10 @@
+FROM golang:1.26-alpine AS builder
+WORKDIR /src
+COPY go.mod main.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /docktor-agent main.go
+
+FROM alpine:3.21
+RUN apk --no-cache add ca-certificates
+COPY --from=builder /docktor-agent /usr/local/bin/docktor-agent
+EXPOSE 8081
+CMD ["docktor-agent"]
