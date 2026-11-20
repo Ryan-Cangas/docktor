@@ -2,23 +2,6 @@ import { useEffect, useRef, useState } from "react";
 
 interface ContainerInfo {
   id: string;
-  name: string;
-  image: string;
-  state: string;
-  status: string;
-  auto_heal: boolean;
-}
-
-interface HealEvent {
-  timestamp: string;
-  container_id: string;
-  container_name: string;
-  trigger: string;
-  status: string;
-}
-
-interface Container {
-  id: string;
   raw_id?: string;
   node?: string;
   name: string;
