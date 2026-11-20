@@ -17,6 +17,26 @@ interface HealEvent {
   status: string;
 }
 
+interface Container {
+  id: string;
+  raw_id?: string;
+  node?: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  auto_heal: boolean;
+}
+
+interface HealEvent {
+  timestamp: string;
+  node?: string;
+  container_id: string;
+  container_name: string;
+  trigger: string;
+  status: string;
+}
+
 export default function App() {
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [history, setHistory] = useState<HealEvent[]>([]);
@@ -91,12 +111,49 @@ export default function App() {
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                fontWeight: 600,
+                alignItems: "center",
+                gap: "0.5rem",
               }}
             >
-              <span>{c.name}</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem",
+                  minWidth: 0,
+                }}
+              >
+                <strong
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {c.name}
+                </strong>
+                {c.node && (
+                  <span
+                    style={{
+                      fontSize: "0.65rem",
+                      padding: "0.1rem 0.4rem",
+                      borderRadius: "4px",
+                      background: "#1e293b",
+                      color: "#94a3b8",
+                      border: "1px solid #334155",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {c.node}
+                  </span>
+                )}
+              </div>
               <span
-                style={{ color: c.state === "running" ? "#4ade80" : "#f87171" }}
+                style={{
+                  color: c.state === "running" ? "#4ade80" : "#f87171",
+                  fontSize: "0.75rem",
+                  flexShrink: 0,
+                }}
               >
                 ● {c.state}
               </span>
@@ -105,7 +162,7 @@ export default function App() {
               style={{
                 fontSize: "0.75rem",
                 color: "#94a3b8",
-                marginTop: "4px",
+                marginTop: "0.25rem",
               }}
             >
               {c.auto_heal ? "🛡️ Auto-Heal Active" : "Manual"} • {c.status}
