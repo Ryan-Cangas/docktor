@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface ContainerInfo {
   id: string;
@@ -25,18 +25,31 @@ export default function App() {
   const [history, setHistory] = useState<HealEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [nodeFilter, setNodeFilter] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
+  const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const fetchStatus = async () => {
-    const [cRes, hRes] = await Promise.all([
-      fetch("/api/containers"),
-      fetch("/api/history"),
-    ]);
-    const cData: ContainerInfo[] = await cRes.json();
-    setContainers(cData);
-    setHistory(await hRes.json());
-    if (!selectedId && cData.length > 0) {
-      setSelectedId(cData[0].id);
+    try {
+      const [cRes, hRes] = await Promise.all([
+        fetch("/api/containers"),
+        fetch("/api/history"),
+      ]);
+      if (cRes.ok) {
+        const list: ContainerInfo[] = await cRes.json();
+        setContainers(list);
+        if (list.length > 0) {
+          setSelectedId((prev) =>
+            prev && list.some((c) => c.id === prev) ? prev : list[0].id,
+          );
+        }
+      }
+      if (hRes.ok) {
+        setHistory(await hRes.json());
+      }
+    } catch (err) {
+      console.error("Polling error:", err);
     }
   };
 
@@ -51,20 +64,58 @@ export default function App() {
     setLogs([]);
     const es = new EventSource(`/api/logs/${selectedId}`);
     es.onmessage = (e) => {
-      setLogs((prev) => [...prev.slice(-300), e.data]);
+      setLogs((prev) => [...prev.slice(-400), e.data]);
     };
     return () => es.close();
   }, [selectedId]);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    if (autoScroll) {
+      logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs, autoScroll]);
+
+  const nodes = useMemo(() => {
+    const unique = new Set(
+      containers.map((c) => c.node).filter((n): n is string => Boolean(n)),
+    );
+    return ["all", ...Array.from(unique)];
+  }, [containers]);
+
+  const filteredContainers = useMemo(() => {
+    return containers.filter((c) => {
+      const matchesNode = nodeFilter === "all" || c.node === nodeFilter;
+      const matchesSearch = c.name
+        .toLowerCase()
+        .includes(search.toLowerCase().trim());
+      return matchesNode && matchesSearch;
+    });
+  }, [containers, nodeFilter, search]);
+
+  const selectedContainer = containers.find((c) => c.id === selectedId);
+  const runningCount = containers.filter((c) => c.state === "running").length;
+
+  const getLogColor = (line: string) => {
+    const lower = line.toLowerCase();
+    if (
+      lower.includes("error") ||
+      lower.includes("fatal") ||
+      lower.includes("panic") ||
+      lower.includes("exception")
+    ) {
+      return "#f87171";
+    }
+    if (lower.includes("warn")) {
+      return "#fbbf24";
+    }
+    return "#e2e8f0";
+  };
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "320px 1fr",
+        gridTemplateColumns: "340px 1fr",
         height: "100vh",
       }}
     >
@@ -73,21 +124,98 @@ export default function App() {
           borderRight: "1px solid #1e293b",
           padding: "1rem",
           overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
-        <h2 style={{ marginTop: 0, color: "#38bdf8" }}>🩺 Docktor</h2>
-        <h4 style={{ color: "#94a3b8", marginBottom: "0.5rem" }}>CONTAINERS</h4>
-        {containers.map((c) => (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <h2 style={{ margin: 0, color: "#38bdf8" }}>🩺 Docktor</h2>
+          <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+            {runningCount}/{containers.length} up
+          </span>
+        </div>
+
+        {/* Search input */}
+        <input
+          type="text"
+          placeholder="Filter containers..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            padding: "0.45rem 0.65rem",
+            marginBottom: "0.6rem",
+            borderRadius: "6px",
+            border: "1px solid #334155",
+            background: "#0f172a",
+            color: "#f8fafc",
+            fontSize: "0.8rem",
+            outline: "none",
+          }}
+        />
+
+        {/* LXC Node filter tabs */}
+        {nodes.length > 2 && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.35rem",
+              marginBottom: "0.75rem",
+            }}
+          >
+            {nodes.map((n) => (
+              <button
+                key={n}
+                onClick={() => setNodeFilter(n)}
+                style={{
+                  padding: "0.2rem 0.55rem",
+                  borderRadius: "999px",
+                  fontSize: "0.7rem",
+                  cursor: "pointer",
+                  border: "1px solid #334155",
+                  background: nodeFilter === n ? "#0284c7" : "#0f172a",
+                  color: nodeFilter === n ? "#fff" : "#94a3b8",
+                }}
+              >
+                {n === "all" ? "All Nodes" : n}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <h4
+          style={{
+            color: "#94a3b8",
+            marginTop: "0.25rem",
+            marginBottom: "0.5rem",
+            fontSize: "0.75rem",
+            letterSpacing: "0.05em",
+          }}
+        >
+          CONTAINERS ({filteredContainers.length})
+        </h4>
+
+        {filteredContainers.map((c) => (
           <div
             key={c.id}
             onClick={() => setSelectedId(c.id)}
             style={{
-              padding: "0.75rem",
-              marginBottom: "0.5rem",
+              padding: "0.7rem",
+              marginBottom: "0.45rem",
               borderRadius: "8px",
               cursor: "pointer",
               background: selectedId === c.id ? "#1e293b" : "#0f172a",
-              border: "1px solid #334155",
+              border:
+                selectedId === c.id ? "1px solid #38bdf8" : "1px solid #334155",
             }}
           >
             <div
@@ -111,6 +239,7 @@ export default function App() {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    fontSize: "0.88rem",
                   }}
                 >
                   {c.name}
@@ -121,8 +250,8 @@ export default function App() {
                       fontSize: "0.65rem",
                       padding: "0.1rem 0.4rem",
                       borderRadius: "4px",
-                      background: "#1e293b",
-                      color: "#94a3b8",
+                      background: "#0f172a",
+                      color: "#38bdf8",
                       border: "1px solid #334155",
                       flexShrink: 0,
                     }}
@@ -134,7 +263,7 @@ export default function App() {
               <span
                 style={{
                   color: c.state === "running" ? "#4ade80" : "#f87171",
-                  fontSize: "0.75rem",
+                  fontSize: "0.72rem",
                   flexShrink: 0,
                 }}
               >
@@ -143,7 +272,7 @@ export default function App() {
             </div>
             <div
               style={{
-                fontSize: "0.75rem",
+                fontSize: "0.73rem",
                 color: "#94a3b8",
                 marginTop: "0.25rem",
               }}
@@ -156,8 +285,10 @@ export default function App() {
         <h4
           style={{
             color: "#94a3b8",
-            marginTop: "1.5rem",
+            marginTop: "1.25rem",
             marginBottom: "0.5rem",
+            fontSize: "0.75rem",
+            letterSpacing: "0.05em",
           }}
         >
           RECENT HEAL EVENTS
@@ -178,9 +309,19 @@ export default function App() {
               borderRadius: "6px",
             }}
           >
-            <strong>{h.container_name}</strong> ({h.trigger}) →{" "}
-            <span style={{ color: "#4ade80" }}>{h.status}</span>
-            <div style={{ color: "#64748b" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <strong>{h.container_name}</strong>
+              {h.node && (
+                <span style={{ fontSize: "0.68rem", color: "#38bdf8" }}>
+                  {h.node}
+                </span>
+              )}
+            </div>
+            <div>
+              ({h.trigger}) →{" "}
+              <span style={{ color: "#4ade80" }}>{h.status}</span>
+            </div>
+            <div style={{ color: "#64748b", fontSize: "0.7rem" }}>
               {new Date(h.timestamp).toLocaleTimeString()}
             </div>
           </div>
@@ -195,15 +336,59 @@ export default function App() {
           overflow: "hidden",
         }}
       >
-        <div style={{ marginBottom: "0.5rem", fontWeight: 600 }}>
-          Live Logs —{" "}
-          {containers.find((c) => c.id === selectedId)?.name ||
-            "Select a container"}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "0.6rem",
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>
+            Live Logs —{" "}
+            {selectedContainer
+              ? `${selectedContainer.name}${
+                  selectedContainer.node ? ` (${selectedContainer.node})` : ""
+                }`
+              : "Select a container"}
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              onClick={() => setAutoScroll((prev) => !prev)}
+              style={{
+                padding: "0.3rem 0.65rem",
+                borderRadius: "6px",
+                border: "1px solid #334155",
+                background: autoScroll ? "#1e293b" : "#b45309",
+                color: "#f8fafc",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+            >
+              {autoScroll ? "Auto-Scroll: ON" : "Auto-Scroll: PAUSED"}
+            </button>
+            <button
+              onClick={() => setLogs([])}
+              style={{
+                padding: "0.3rem 0.65rem",
+                borderRadius: "6px",
+                border: "1px solid #334155",
+                background: "#0f172a",
+                color: "#94a3b8",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+            >
+              Clear
+            </button>
+          </div>
         </div>
+
         <div
           style={{
             flex: 1,
             background: "#020617",
+            border: "1px solid #1e293b",
             borderRadius: "8px",
             padding: "1rem",
             overflowY: "auto",
@@ -215,7 +400,11 @@ export default function App() {
           {logs.map((line, idx) => (
             <div
               key={idx}
-              style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}
+              style={{
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                color: getLogColor(line),
+              }}
             >
               {line}
             </div>
